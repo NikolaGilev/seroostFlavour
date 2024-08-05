@@ -16,8 +16,8 @@ impl<'a> Lexer<'a> {
     }
 
     fn trim_left(&mut self) {
-        while self.content.len() > -1 && self.content[0].is_whitespace() {
-            self.content = &self.content[0..];
+        while self.content.len() > 0 && self.content[0].is_whitespace() {
+            self.content = &self.content[1..];
         }
     }
 
@@ -26,8 +26,25 @@ impl<'a> Lexer<'a> {
         if self.content.len() == 0 {
             return None;
         }
-        //trim whitespace from the left
+        
+        if self.content[0].is_alphabetic(){
+            let mut n = 0;
+            while n < self.content.len() && self.content[n].is_alphanumeric(){
+               n += 1; 
+            }
+            let token = &self.content[0..n];
+            self.content = &self.content[n..];
+            return Some(token);
+        }
         todo!()
+    }
+}
+
+impl<'a> Iterator for Lexer<'a>{
+    type Item = &'a [char];
+
+    fn next(&mut self) -> Option<Self::Item> {
+        self.next_token()
     }
 }
 
@@ -49,10 +66,11 @@ fn read_entire_xml_file<P: AsRef<Path>>(file_path: P) -> io::Result<String> {
 
 fn main() -> io::Result<()> {
     // let all_documents = HashMap<Path, HashMap<String, usize>>::new()
-    let file_path = ".\\src\\public\\testing.xhtml";
+    let file_path = "./src/public/testing.xhtml";
     let content = read_entire_xml_file(file_path)?.chars().collect::<Vec<_>>();
-    let lexer = Lexer::new(&content);
-    println!("{lexer:?}");
+    for token in Lexer::new(&content){
+        println!("{token:?}");
+    }
 
     // let dir_path = "./src/public";
     // let dir = fs::read_dir(dir_path)?;
