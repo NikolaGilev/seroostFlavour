@@ -44,7 +44,7 @@ impl<'a> Iterator for Lexer<'a>{
     type Item = &'a [char];
 
     fn next(&mut self) -> Option<Self::Item> {
-        self.next_token()
+        self.next_token() 
     }
 }
 
