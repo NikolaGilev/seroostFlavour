@@ -1,130 +1,88 @@
-use std::collections::HashMap;
-use std::fs;
+use std::env;
 use std::fs::File;
-use std::io;
 use std::path::Path;
-use std::path::PathBuf;
-use xml::reader::{EventReader, XmlEvent};
+use std::process::ExitCode;
+use tiny_http::Server;
+mod serve;
+mod index;
+mod lexer;
 
-#[derive(Debug)]
-struct Lexer<'a> {
-    content: &'a [char],
+fn usage(program: &str) {
+    eprintln!("Usage: {program} [SUBCOMMAND] [OPTIONS]");
+    eprintln!("Subcommands:");
+    eprintln!("    index <folder>                  index the <folder> and save the index to index.json file");
+    eprintln!("    search <index-file>             check how many documents are indexed in the file (searching is not implemented yet)");
+    eprintln!("    serve <index-file> [address]    start local HTTP server with Web Interface");
 }
 
-impl<'a> Lexer<'a> {
-    fn new(content: &'a [char]) -> Self {
-        Self { content }
-    }
 
-    fn trim_left(&mut self) {
-        while self.content.len() > 0 && self.content[0].is_whitespace() {
-            self.content = &self.content[1..];
-        }
-    }
+fn entry() -> Result<(), ()> {
+    let mut args = env::args();
+    let program = args.next().expect("path to program is provided");
 
-    fn chop(&mut self, n: usize) -> &'a [char] {
-        let token = &self.content[0..n];
-        self.content = &self.content[n..];
-        token
-    }
+    let subcommand = args.next().ok_or_else(|| {
+        usage(&program);
+        eprintln!("ERROR: No subcommand is provided");
+    })?;
 
-    fn chop_while<P>(&mut self, mut predicate: P) -> &'a [char] where P: FnMut(&char) -> bool {
-        let mut n = 0;
-        while n < self.content.len() && predicate(&self.content[n]) {
-            n += 1;
-        }
-        self.chop(n)
-    }
+    match subcommand.as_str() {
+        "index" => {
+            let dir_path = args.next().ok_or_else(|| {
+                usage(&program);
+                eprintln!("ERROR: No directory is provided for {subcommand} subcommand");
+            })?;
 
-    fn next_token(&mut self) -> Option<&'a [char]> {
-        self.trim_left();
-        if self.content.len() == 0 {
-            return None
-        }
+            let mut tf_index = index::TermFreqIndex::new();
+            index::tf_index_of_folder(Path::new(&dir_path), &mut tf_index)?;
+            index::save_tf_index(&tf_index, "index.json")?;
+        },
+        "search" => {
+            let index_path = args.next().ok_or_else(|| {
+                usage(&program);
+                eprintln!("ERROR: No path to index is provided for {subcommand} subcommand");
+            })?; 
+            index::check_index(&index_path)?;
+        },
+        "serve" => {
+            let index_path = args.next().ok_or_else(|| {
+                usage(&program);
+                eprintln!("ERROR: No path to index is provided for {subcommand} subcommand");
+            })?; 
+            let index_file = File::open(&index_path).map_err(|err| {
+                eprintln!("ERROR: Could not open index file {index_path}: {err}");
+            })?;
 
-        if self.content[0].is_numeric() {
-            return Some(self.chop_while(|x| x.is_numeric()));
-        }
+            let tf_index: index::TermFreqIndex = serde_json::from_reader(index_file).map_err(|err| {
+                eprintln!("ERROR: Could not parse index file {index_path}: {err}")
+            })?;
 
-        if self.content[0].is_alphabetic() {
-            return Some(self.chop_while(|x| x.is_alphanumeric()));
-        } 
-        
-        return Some(self.chop(1));
-    }
-}
+            let address = args.next().unwrap_or("127.0.0.1:6969".to_string());
 
-impl<'a> Iterator for Lexer<'a> {
-    type Item = &'a [char];
+            let server = Server::http(&address).map_err(|err| {
+                eprintln!("ERROR: Could not start HTTP server at {address}: {err}");
+            })?;
 
-    fn next(&mut self) -> Option<Self::Item> {
-        self.next_token()
-    }
-}
+            println!("INFO: Listening at http://{address}/");
 
-fn index_document(_doc_content: &str) -> HashMap<String, usize> {
-    todo!("not implemented");
-}
-
-fn read_entire_xml_file<P: AsRef<Path>>(file_path: P) -> io::Result<String> {
-    let file = File::open(file_path)?;
-    let er = EventReader::new(file);
-    let mut content = String::new();
-    for event in er.into_iter() {
-        if let XmlEvent::Characters(text) = event.expect("Failed to read XML event") {
-            content.push_str(&text);
-            content.push_str(" ");
-        }
-    }
-    Ok(content)
-}
-
-type TermFreq = HashMap::<String, usize>;
-type TermFreqIndex = HashMap<PathBuf, TermFreq>;
-
-fn main() -> io::Result<()> {
-    let index_path = "index.json";
-    let index_file = File::open(index_path)?;
-    println!("Reading from file {index_path}...");
-    let tf_index: TermFreqIndex = serde_json::from_reader(index_file).expect("serde does not fail");
-    println!("{index_path} contains {count} files", count = tf_index.len());
-    Ok(())
-}
-
-fn main2() -> io::Result<()> {
-    let top_n = 20;
-    let dir_path = "./src/public/docs.gl/gl4";
-    let dir = fs::read_dir(dir_path)?;
-    let mut tf_index = TermFreqIndex::new();
-
-    for file in dir {
-        let file_path = file?.path();
-
-        println!("Indexing {:?}...", &file_path);
-        let content = read_entire_xml_file(&file_path)?.chars().collect::<Vec<_>>();
-        
-        let mut tf = TermFreq::new(); 
-
-        for token in Lexer::new(&content) {
-            let term = token.iter().map(|x| x.to_ascii_uppercase()).collect::<String>();
-            if let Some(freq) = tf.get_mut(&term) {
-                *freq += 1;
-            } else {
-                tf.insert(term, 1);
+            for request in server.incoming_requests() {
+                // TODO: serve custom 500 in case of an error
+                serve::serve_request(&tf_index, request).ok();
             }
+        },
+        _ => {
+            usage(&program);
+            eprintln!("ERROR: unknown subcommand {subcommand}");
+            return Err(());
         }
-
-        let mut stats = tf.iter().collect::<Vec<_>>();
-        stats.sort_by_key(|(_, f)| *f);
-        stats.reverse();
-
-        tf_index.insert(file_path, tf);
     }
 
-    let index_path = "index.json";
-    println!("Saving file {index_path}...");
-    let index_file = File::create(index_path)?;
-    serde_json::to_writer(index_file, &tf_index).expect("serde works fine");
-
     Ok(())
+
+}
+
+fn main() -> ExitCode {
+    match entry() {
+        Ok(()) => ExitCode::SUCCESS,
+        Err(()) => ExitCode::FAILURE,
+    }
 }

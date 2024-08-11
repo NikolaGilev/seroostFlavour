@@ -1,5 +1,6 @@
 PART 1: https://www.youtube.com/watch?v=hm5xOJiVEeg -- DONE
-PART 2: https://www.youtube.com/watch?v=OYAKjlYm_Ew -- NEXT...
+PART 2: https://www.youtube.com/watch?v=OYAKjlYm_Ew -- DONE
+PART 3-6 - NEXT... V
 
 PLAYLIST WITH ALL PARTS: https://www.youtube.com/watch?v=OYAKjlYm_Ew&list=PLpM-Dvs8t0VZXC-91PpIp-eAt0WF5SKEv&index=2
 
